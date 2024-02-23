@@ -1,0 +1,355 @@
+# Data_Preprocessing
+import numpy as np
+import pandas as pd
+from sklearn import preprocessing
+import Representation_learning
+from sklearn.neighbors import LocalOutlierFactor as LOF
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn import model_selection
+from sklearn.ensemble import RandomForestClassifier
+from scipy.io import loadmat
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+# from sklearn.naive_bayes import GaussianNB
+# from sklearn import svm
+from sklearn.tree import DecisionTreeClassifier
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import random
+from sklearn.datasets import fetch_california_housing
+from sklearn import ensemble
+from sklearn.metrics import mean_squared_error
+import time
+
+
+# from xgboost.sklearn import XGBClassifier
+# import matplotlib.pyplot as plt
+
+RandomSeed = 723
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# # input data and useful files
+# data_folder = './data/original/'
+# knockoff_folder = './data/knockoff/'
+# knockoff_label_folder = './data/knockoff/knockoff_result/label/'
+# data_label_first = ['Amazon', 'cs', ]
+# mat_file_folder = './data/search_order/'
+#
+# # choose dataset
+# # dataset_name = 'shortCarto'
+# # dataset_name = 'Carto'
+# # dataset_name = 'phpDYCOet'
+# # dataset_name = 'Amazon'
+# # dataset_name = 'cs'
+# dataset_name = 'Glycation'
+#
+# # choose knockoff type
+# # knockoff_type = 'metro'
+# knockoff_type = 'Gaussian'
+#
+# # choose measurement method
+# measure_type = 'Euclidean'
+#
+# # choose threshold type
+# threshold_type = 'mean'
+# # threshold_type = 'median'
+#
+# # input data
+# dataset_all = pd.read_csv(knockoff_folder + knockoff_type + '_' + dataset_name + '.csv')
+#
+# # input knockoff label
+# knockoff_label = np.load(
+#     knockoff_label_folder + knockoff_type + '_' + dataset_name + '_' + measure_type + '_' + threshold_type + '.npy')
+#
+# # get information
+# r, c = dataset_all.shape
+# n_sample = r
+# n_feature = int((c - 1) / 2)
+#
+# # split data and label
+# if dataset_name in data_label_first:
+#     Y = dataset_all.iloc[:, 0]
+#     X_original = dataset_all.iloc[:, 1:n_feature + 1]
+#     X_knockoff = dataset_all.iloc[:, (n_feature + 1):c]
+# else:
+#     X_original = dataset_all.iloc[:, 0:n_feature]
+#     Y = dataset_all.iloc[:, n_feature]
+#     X_knockoff = dataset_all.iloc[:, (n_feature + 1):c]
+#
+# # create train and validation data
+# X_train, X_val, Y_train, Y_val = model_selection.train_test_split(X_original, Y, test_size=0.1,
+#                                                                   random_state=RandomSeed)
+#
+# # initial model
+# model = RandomForestClassifier(n_jobs=-1, n_estimators=100, random_state=0)
+# # model =DecisionTreeClassifier(criterion='entropy', min_samples_leaf=3, random_state=0)
+#
+# # load feature order
+# mat_file_name = mat_file_folder + 'IGorder' + dataset_name + '.mat'
+# Forder = loadmat(mat_file_name)
+# order = Forder["Forder"].squeeze(0) - 1
+#
+# # put features in order
+# X_train = X_train.iloc[:, order]
+# X_val = X_val.iloc[:, order]
+# -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# regression task
+model = ensemble.AdaBoostRegressor(n_estimators=50)  # 用50个决策树
+# model = tree.DecisionTreeRegressor()
+# model = linear_model.LinearRegression()
+# model = svm.SVR()
+# model = neighbors.KNeighborsRegressor()
+# model = ensemble.RandomForestRegressor(n_estimators=20)#用20个决策树
+# model = ensemble.GradientBoostingRegressor(n_estimators=100)#用100个决策树
+# model = BaggingRegressor()
+# model = ExtraTreeRegressor()
+
+housing_california = fetch_california_housing()
+dataset_name = 'california housing'
+LR_X = housing_california.data  # data
+LR_y = housing_california.target  # label
+n_sample = LR_X.shape[0]
+n_feature = LR_X.shape[1]
+print(n_sample, n_feature)
+# create train and validation data
+X_train, X_val, Y_train, Y_val = model_selection.train_test_split(LR_X, LR_y, test_size=0.1, random_state=RandomSeed)
+# ======================================================================================================================
+
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+# DQN
+N_feature = X_train.shape[1]  # feature number
+N_sample = X_train.shape[0]  # feature length,i.e., sample number
+BATCH_SIZE = 16
+LR = 0.01
+EPSILON = 0.9  # 90%的概率使用DQN网络选择动作
+EPSILON_MAX = 1.0  # 最终不使用随机选择
+EPSILON_STEP_SIZE = 0.001
+knockoff_EPSILON = 0.5  # 在随机选择中使用knockoff标签的比例
+GAMMA = 0.9
+TARGET_REPLACE_ITER = 100  # After how much time you refresh target network
+MEMORY_CAPACITY = 400  # The size of experience replay buffer
+EXPLORE_STEPS = 2000  # How many exploration steps you'd like, should be larger than MEMORY_CAPACITY20
+VAL_STEPS = 100
+N_ACTIONS = 2
+N_STATES = 480 + N_feature
+knockoff_p = 0.7
+
+
+#
+
+class Net(nn.Module):
+
+    def __init__(self, N_STATES, N_ACTIONS):
+        super(Net, self).__init__()
+        self.fc1 = nn.Linear(N_STATES, 100)
+        self.fc1.weight.data.normal_(0, 0.1)  # initialization, set seed to ensure the same result
+        self.out = nn.Linear(100, N_ACTIONS)
+        self.out.weight.data.normal_(0, 0.1)  # initialization
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = F.relu(x)
+        action_value = self.out(x)
+        return action_value
+
+
+class DQN(object):
+
+    def __init__(self, N_STATES, N_ACTIONS):
+        self.eval_net, self.target_net = Net(N_STATES, N_ACTIONS), Net(N_STATES, N_ACTIONS)
+
+        self.learn_step_counter = 0
+        self.EPSILON = 0.9
+        # self.EPSILON_MAX = 1.0
+        # self.EPSILON_STEP_SIZE = 0.001
+        self.memory_counter = 0
+        self.memory = np.zeros((MEMORY_CAPACITY, N_STATES * 2 + 2))
+        self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=LR)
+        self.loss_func = nn.MSELoss()
+
+    def choose_action(self, x):
+        x = torch.unsqueeze(torch.FloatTensor(x), 0)
+        if np.random.uniform() < self.EPSILON:
+            action_value = self.eval_net.forward(x)
+            action = torch.max(action_value, 1)[1].data.numpy()
+            action = action[0]
+
+        else:
+            action = np.random.randint(0, N_ACTIONS)
+            # if self.EPSILON <= self.EPSILON_MAX:
+            #     self.EPSILON = self.EPSILON + self.EPSILON_STEP_SIZE
+        return action
+
+    def store_transition(self, s, a, r, s_):
+        transition = np.hstack((s, [a, r], s_))
+        index = self.memory_counter % MEMORY_CAPACITY  # If full, restart from the beginning
+        self.memory[index, :] = transition
+        self.memory_counter += 1
+
+    def learn(self):
+        if self.learn_step_counter % TARGET_REPLACE_ITER == 0:
+            self.target_net.load_state_dict(self.eval_net.state_dict())
+        self.learn_step_counter += 1
+
+        sample_index = np.random.choice(MEMORY_CAPACITY, BATCH_SIZE)
+        b_memory = self.memory[sample_index, :]
+        b_s = torch.FloatTensor(b_memory[:, :N_STATES])
+        b_a = torch.LongTensor(b_memory[:, N_STATES:N_STATES + 1])
+        b_r = torch.FloatTensor(b_memory[:, N_STATES + 1:N_STATES + 2])
+        b_s_ = torch.FloatTensor(b_memory[:, -N_STATES:])
+
+        q_eval = self.eval_net(b_s).gather(1, b_a)
+        q_next = self.target_net(b_s_).detach()
+        q_target = b_r + GAMMA * q_next.max(1)[0].view(BATCH_SIZE, 1)
+        loss = self.loss_func(q_eval, q_target)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+
+np.random.seed(RandomSeed)
+torch.manual_seed(RandomSeed)  # reproducible
+
+dqn = DQN(N_STATES=N_STATES, N_ACTIONS=N_ACTIONS)
+# # The element in the result list consists two parts,
+# # i.e., accuracy and the action list (action 1 means selecting corresponding feature, 0 means deselection).
+#
+
+L1 = random.sample(range(0, N_feature), 2)
+Fstate = np.zeros(N_feature)
+Fstate[[index for index in L1]] = 1
+# Fstate = np.random.randint(2, size=N_feature)
+# while sum(Fstate) < 2:
+#     Fstate = np.random.randint(2, size=N_feature)
+print(Fstate)
+# Fstate = np.zeros(N_feature)
+# Fstate[0] = 1
+X_selected = X_train[:, Fstate == 1]
+X_array = np.array(X_selected)
+min_max_scaler = preprocessing.MinMaxScaler(feature_range=(-1, 1))
+X_array = min_max_scaler.fit_transform(X_array)
+X_tensor = torch.FloatTensor(X_array).unsqueeze(0).unsqueeze(0)
+s = Representation_learning.representation_training(X_tensor)
+s = s.detach().numpy().reshape(-1)
+position = np.arange(1, N_feature + 1)
+onehot_encoded = OneHotEncoder(sparse=False).fit_transform(position.reshape(-1, 1))
+s = np.append(s, onehot_encoded[0])
+# s = np.append(s,1)
+
+result = []
+T = N_feature
+# dqn.EPSILON_STEP_SIZE = (dqn.EPSILON_MAX - dqn.EPSILON)/((EXPLORE_STEPS-1)*T)
+start_time = time.time()
+
+for i in range(EXPLORE_STEPS):
+    t = i % T
+    Faction = dqn.choose_action(s)
+    Fstate[t] = Faction
+    if sum(Fstate) < 1:
+        Faction = 1
+        Fstate[t] = Faction
+
+    X_selected = X_train[:, Fstate == 1]
+    X_array = np.array(X_selected)
+    min_max_scaler = preprocessing.MinMaxScaler(feature_range=(-1, 1))
+    X_array = min_max_scaler.fit_transform(X_array)
+    X_tensor = torch.FloatTensor(X_array).unsqueeze(0).unsqueeze(0)
+    s_ = Representation_learning.representation_training(X_tensor)
+    s_ = s_.detach().numpy().reshape(-1)
+    if t == T - 1:
+        s_ = np.append(s_, onehot_encoded[0])
+        # s_ = np.append(s_, 1)
+    else:
+        s_ = np.append(s_, onehot_encoded[t + 1])
+        # s_ = np.append(s_, t + 2)
+
+    corr = pd.DataFrame(X_val).corr().abs()
+    ave_corr = (corr.iloc[:, t].sum()) / (X_val.shape[1])
+
+    # r = (accuracy - ave_corr)
+    # r = (0.1 - ave_corr)
+    # r = 0.1
+
+    # 每100步计算一次acc进行保存
+    # if (i != 0) and (i % VAL_STEPS == 0):
+    model.fit(X_train[:, Fstate == 1], Y_train)
+    pred_y = model.predict(X_val[:, Fstate == 1])
+    mse = mean_squared_error(Y_val, pred_y)
+    # accuracy = model.score(X_val.iloc[:, Fstate == 1], Y_val)
+    # Y_pred = model.predict(X_val.iloc[:, Fstate == 1])
+    # macroF1 = f1_score(Y_val, Y_pred, average='macro')
+    # precision = precision_score(Y_val, Y_pred, average='macro')
+    # recall = recall_score(Y_val, Y_pred, average='macro')
+
+    # r = accuracy
+    # r = random.uniform(-1, 1)
+    r = (1 - mse - ave_corr)
+    # r = (1 - mse)
+    # r = random.uniform(-1, 1)
+
+
+    if i % 100 == 0:
+        # result.append([accuracy, precision, recall, macroF1, Fstate, r])
+        result.append([mse, Fstate, r])
+        # print(accuracy, r)
+        print(mse, r)
+        print(Fstate)
+
+    dqn.store_transition(s, Faction, r, s_)
+
+    if dqn.memory_counter > MEMORY_CAPACITY:
+        dqn.learn()
+    s = s_
+end_time = time.time()
+
+output = []
+reward_output = []
+name = []
+name.append("result types")
+output.append('mse reward')
+reward_output.append('mse reward')
+# output.append('Original framework with acc')
+# reward_output.append('Original framework with acc')
+# output.append('Original framework without acc')
+# reward_output.append('Original framework without acc')
+
+# max_accuracy = 0
+min_mse = 100000000
+optimal_set = []
+for i in range(len(result)):
+    # name.append("Accuracy of the {}-th explore step".format(i * 100))
+    name.append("mse of the {}-th explore step".format(i * 100))
+    output.append(result[i][0])
+    reward_output.append(result[i][2])
+
+    # if result[i][0] > max_accuracy:
+    #     max_accuracy = result[i][0]
+    #     optimal_set = result[i][4]
+    #     Mmacro_f1 = result[i][3]
+    #     Mprecision = result[i][1]
+    #     Mrecall = result[i][2]
+
+    if result[i][0] < min_mse:
+        min_mse = result[i][0]
+        optimal_set = result[i][1]
+
+print("The min_mse is: {}, the optimal selection for each feature is:{}".format(min_mse, optimal_set))
+
+name.append("feature subset")
+output.append(optimal_set)
+name.append("min_mse")
+output.append(min_mse)
+elapsed_time = end_time - start_time
+name.append("elapsed_time")
+output.append(elapsed_time)
+
+
+out_1 = dict(zip(name, output))
+# out_2 = dict(zip(name, reward_output))
+out_1 = pd.DataFrame([out_1])
+# out_2 = pd.DataFrame([out_2])
+result_folder = './result/knockoff/'
+out_1.to_csv(result_folder + dataset_name + '_test_greedy_time.csv', mode='a')
+# out_2.to_csv(result_folder + dataset_name + '_reward_test.csv', mode='a')
